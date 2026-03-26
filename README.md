@@ -7,6 +7,10 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)](https://fastapi.tiangolo.com/)
 
+**Live Demo: https://frontend-eta-sand-86.vercel.app**
+
+![ForecastHub Dashboard](docs/dashboard-screenshot.jpg)
+
 ---
 
 ## Why I Built This
