@@ -9,7 +9,7 @@
 
 **Live Demo: https://frontend-eta-sand-86.vercel.app**
 
-![ForecastHub Dashboard](docs/dashboard-screenshot.jpg)
+![ForecastHub Dashboard](docs/dashboard-screenshot.png)
 
 ---
 
