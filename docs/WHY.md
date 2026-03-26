@@ -1,50 +1,43 @@
 # Why I Built ForecastHub
 
-## The problem
+## The Problem I Lived
 
-Most inventory management tools fall into one of two buckets:
+For several years I worked in IT operations at a 25-location coffee chain. My team kept the systems running — point of sale, loyalty cards, back-office reporting — but I sat close enough to the operations team to watch their weekly inventory ritual up close.
 
-1. **Too expensive** — enterprise platforms like SAP IBP or Blue Yonder cost tens of thousands of dollars per year and require dedicated consultants to configure.
-2. **Too simplistic** — spreadsheets with `=AVERAGE(last_30_days)` that ignore seasonality, give no confidence intervals, and have no actionable reorder logic.
+Every Monday morning, the ops coordinator would pull a sales report from the POS, paste it into a master spreadsheet, manually update a column for each location, eyeball a few trend lines, and then decide how much to order. Coffee beans, milk, cups, syrups, pastries — dozens of SKUs across 25 stores. The spreadsheet used `=AVERAGE()` on the last 30 days. No seasonality. No confidence intervals. No safety stock math. No systematic reorder logic. Just gut feel dressed up as a process.
 
-Small and mid-sized retailers, DTC brands, and marketplace sellers are stuck in the middle. They have enough data to benefit from real forecasting, but can't justify enterprise software costs.
+When the estimates were wrong — and they were wrong regularly — the consequences were immediate and painful. Locations would run out of oat milk on a Tuesday morning, scramble to borrow inventory from a nearby store, and lose revenue during peak hours. Or the opposite: over-order a seasonal pastry, watch it expire, and absorb the write-down. Either way, margin bled out, and the operations team spent half their time firefighting problems that better forecasting would have prevented.
 
-## The gap
+The maddening part was that I knew the tools to fix this existed. I had read about StatsForecast, Prophet, and Darts. I had run forecasting notebooks in my own time. The math was solved. The libraries were free and genuinely excellent. But they lived in Jupyter notebooks, not dashboards. They required Python and a willingness to read documentation. They produced DataFrames, not decisions.
 
-Modern ML forecasting libraries have become genuinely excellent and completely free:
-- **StatsForecast** (Nixtla) delivers AutoARIMA and ensemble methods in a few lines of Python.
-- **LLMs** can now reason over structured inventory data and answer plain-English questions.
+## The Gap in the Market
 
-But there is no clean, open-source project that wraps these into a usable dashboard. Most tutorials stop at a Jupyter notebook.
+Demand forecasting software falls into two camps, and the space between them is enormous.
 
-## What ForecastHub does
+**Enterprise tools** — SAP Integrated Business Planning, Blue Yonder, Anaplan, o9 Solutions — are purpose-built for complex supply chains. They handle multi-echelon inventory, global supplier networks, S&OP workflows. They are also priced for Fortune 500 procurement budgets: $100,000 to $500,000 per year before implementation consulting. A 25-location coffee chain doesn't belong in that conversation.
 
-ForecastHub bridges that gap:
+**Spreadsheets and simple tools** — Excel, Google Sheets, maybe a basic inventory plugin for Shopify — are accessible but analytically shallow. `=AVERAGE(last_30_days)` ignores weekly and annual seasonality. It gives you no confidence interval, no safety stock recommendation, no reorder point. It tells you what happened, not what's coming.
 
-- **Real forecasts with uncertainty** — not just a naive average, but AutoARIMA + SeasonalNaive with 80 % / 95 % confidence bands.
-- **Inventory logic baked in** — safety stock, reorder points, and EOQ are computed automatically from the forecast data.
-- **AI-powered queries** — ask "which SKUs should I reorder this week?" in plain English and get a data-grounded answer from Claude.
-- **Zero cost to run** — the only paid component is the Anthropic API (optional). Everything else is open-source.
+The open-source forecasting ecosystem has genuinely closed the analytical gap. StatsForecast's AutoARIMA rivals commercial implementations. Ensemble methods with seasonal decomposition are now a few lines of Python. LLMs like Claude can reason over structured inventory data and answer plain-English questions with surprising accuracy. The technology is there.
 
-## Design decisions
+What's missing is the bridge: a web interface that makes these tools usable by the operations manager who doesn't write Python, runs on infrastructure any team can afford (including free), and is honest about what it is — a serious analytical tool, not a toy.
 
-**Why FastAPI + StatsForecast instead of a pure JS stack?**
-The Python ML ecosystem is still unmatched for time-series. FastAPI makes it trivial to expose that as a REST API.
+## What ForecastHub Does Differently
 
-**Why Next.js instead of a Python dashboard (Streamlit/Dash)?**
-Streamlit and Dash are great for prototypes but feel like internal tools. A Next.js frontend allows a real product-quality UI and easy deployment to Vercel.
+ForecastHub isn't trying to compete with SAP IBP. It's trying to give the ops team at a mid-market retailer the same core capability — statistically sound forecasts, automatic safety stock and reorder point calculations, and an AI advisor they can actually talk to — at a cost of zero.
 
-**Why in-memory storage instead of a database?**
-To keep the self-hosted setup as simple as possible — `uvicorn main:app --reload` and you're running. A PostgreSQL migration is the obvious next step for persistence.
+The design priorities reflect what I wish we had:
 
-**Why Claude for NLQ instead of fine-tuning a model?**
-Inventory reasoning requires up-to-date context (current stock levels, recent demand). Claude's long context window and tool-calling make it ideal for injecting live data at query time without any training.
+**Real forecasts, not averages.** AutoARIMA automatically identifies trend, seasonality, and autocorrelation. SeasonalNaive provides robustness for strongly periodic data. The ensemble of the two, with 80% and 95% prediction intervals, gives the user both a point estimate and an honest picture of uncertainty. A manager who sees a wide confidence band knows to hold more safety stock. That's actionable information a spreadsheet average never provides.
 
-## What's next
+**Inventory math built in.** Safety stock, reorder points, and economic order quantity are not exotic concepts — they're undergraduate supply chain formulas — but they're tedious to implement correctly in spreadsheets. ForecastHub computes them automatically from the forecast data and highlights which SKUs are below their reorder point before the ops coordinator even thinks to check.
 
-- [ ] Time-series database backend (TimescaleDB or DuckDB)
-- [ ] Multi-store / multi-warehouse support
-- [ ] Automated reorder email/Slack notifications
-- [ ] ABC-XYZ inventory classification
-- [ ] Supplier lead-time tracking
-- [ ] TimesFM integration for zero-shot forecasting on new SKUs
+**Plain-English queries.** The hardest part of analytics is the last mile: turning numbers into decisions. The AI advisor connects Claude to live inventory data so a user can ask "which SKUs should I reorder this week?" or "how many days of stock does SKU-1001 have?" and get a grounded, data-cited answer in seconds. No query language. No pivot tables. Just a question and an answer.
+
+**Zero friction to start.** Clone the repo, run two commands, and there's a working dashboard with sample data. No database to provision. No cloud account to configure. No consultants. That low barrier to entry matters — tools only create value when people actually use them.
+
+## Who This Is For
+
+ForecastHub is for operations teams at mid-size retailers, DTC brands, marketplace sellers, food and beverage chains, and anyone else managing multi-SKU inventory where spreadsheet-based forecasting is causing real pain and enterprise software is out of reach. It's also for data engineers and ML practitioners who want a solid starting point for a forecasting application they can customize and extend.
+
+The only paid component is the optional Anthropic API for the AI advisor. Everything else — the forecasting engine, the inventory logic, the dashboard — is free and open-source, forever.
