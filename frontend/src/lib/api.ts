@@ -1,7 +1,13 @@
 /**
  * api.ts — HTTP client for the ForecastHub FastAPI backend.
  * Base URL: http://localhost:8000
+ *
+ * When the backend is unreachable (e.g. Vercel demo with no backend), the
+ * data-fetching methods fall back to realistic mock data so the dashboard
+ * stays fully populated.
  */
+
+import { MOCK_KPIS, MOCK_INVENTORY, getMockForecast, getMockForecastAll } from "./mockData";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -88,22 +94,47 @@ export const api = {
     return res.json();
   },
 
-  /** Forecast for a single SKU */
-  forecastSku: (sku: string, horizon = 14) =>
-    request<SkuForecast>(`/api/forecast/${encodeURIComponent(sku)}?horizon=${horizon}`),
+  /** Forecast for a single SKU — falls back to mock data when backend is unreachable */
+  forecastSku: async (sku: string, horizon = 14): Promise<SkuForecast> => {
+    try {
+      return await request<SkuForecast>(
+        `/api/forecast/${encodeURIComponent(sku)}?horizon=${horizon}`
+      );
+    } catch {
+      return getMockForecast(sku);
+    }
+  },
 
-  /** Forecasts for all SKUs */
-  forecastAll: (horizon = 14) =>
-    request<{ forecasts: SkuForecast[] }>(`/api/forecast/all?horizon=${horizon}`),
+  /** Forecasts for all SKUs — falls back to mock data when backend is unreachable */
+  forecastAll: async (horizon = 14): Promise<{ forecasts: SkuForecast[] }> => {
+    try {
+      return await request<{ forecasts: SkuForecast[] }>(
+        `/api/forecast/all?horizon=${horizon}`
+      );
+    } catch {
+      return getMockForecastAll();
+    }
+  },
 
-  /** Inventory status + reorder alerts */
-  getInventory: (leadTime = 7, serviceLevel = 0.95) =>
-    request<InventoryResponse>(
-      `/api/inventory?lead_time=${leadTime}&service_level=${serviceLevel}`
-    ),
+  /** Inventory status + reorder alerts — falls back to mock data when backend is unreachable */
+  getInventory: async (leadTime = 7, serviceLevel = 0.95): Promise<InventoryResponse> => {
+    try {
+      return await request<InventoryResponse>(
+        `/api/inventory?lead_time=${leadTime}&service_level=${serviceLevel}`
+      );
+    } catch {
+      return MOCK_INVENTORY;
+    }
+  },
 
-  /** Summary KPIs */
-  getKpis: () => request<KPIs>("/api/kpis"),
+  /** Summary KPIs — falls back to mock data when backend is unreachable */
+  getKpis: async (): Promise<KPIs> => {
+    try {
+      return await request<KPIs>("/api/kpis");
+    } catch {
+      return MOCK_KPIS;
+    }
+  },
 
   /** Natural language question */
   ask: (question: string) =>
