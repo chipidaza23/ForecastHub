@@ -1,15 +1,19 @@
 /**
  * api.ts — HTTP client for the ForecastHub FastAPI backend.
- * Base URL: http://localhost:8000
  */
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      ...options,
+    });
+  } catch {
+    throw new Error("Failed to fetch — is the backend running?");
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API ${res.status}: ${text}`);
@@ -34,6 +38,17 @@ export interface SkuForecast {
   forecast: ForecastPoint[];
   mape_30d: number | null;
   error?: string;
+}
+
+export interface HistoryPoint {
+  date: string;
+  quantity_sold: number;
+}
+
+export interface SkuHistory {
+  sku: string;
+  days: number;
+  history: HistoryPoint[];
 }
 
 export interface InventoryItem {
@@ -83,7 +98,12 @@ export const api = {
   uploadFile: async (file: File): Promise<UploadResponse> => {
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(`${BASE}/api/upload`, { method: "POST", body: form });
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/api/upload`, { method: "POST", body: form });
+    } catch {
+      throw new Error("Failed to fetch — is the backend running?");
+    }
     if (!res.ok) throw new Error(`Upload failed: ${await res.text()}`);
     return res.json();
   },
@@ -95,6 +115,10 @@ export const api = {
   /** Forecasts for all SKUs */
   forecastAll: (horizon = 14) =>
     request<{ forecasts: SkuForecast[] }>(`/api/forecast/all?horizon=${horizon}`),
+
+  /** Historical sales data for a single SKU */
+  historySku: (sku: string, days = 14) =>
+    request<SkuHistory>(`/api/history/${encodeURIComponent(sku)}?days=${days}`),
 
   /** Inventory status + reorder alerts */
   getInventory: (leadTime = 7, serviceLevel = 0.95) =>
