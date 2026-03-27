@@ -16,21 +16,36 @@ from pydantic import BaseModel
 
 import ai_advisor
 import data_loader
+import db
 import forecaster
 import inventory_logic
 
 load_dotenv()
 
-# ── In-memory data store ────────────────────────────────────────────────────
-# Populated on startup with sample data; replaced when user uploads a file.
+# ── In-memory data store (cache — Supabase is source of truth) ────────────
 _store: dict[str, Optional[pd.DataFrame]] = {"df": None}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load sample data on startup so the app works out of the box
-    _store["df"] = data_loader.generate_sample_data()
-    print("✅  Sample data loaded — 3 SKUs, 365 days")
+    # Try to load from Supabase first; fall back to sample data
+    try:
+        df = data_loader.load_from_supabase()
+        if df is not None and not df.empty:
+            _store["df"] = df
+            skus = df["sku"].nunique()
+            print(f"✅  Loaded {len(df)} rows ({skus} SKUs) from Supabase")
+        else:
+            raise ValueError("No data in Supabase")
+    except Exception as exc:
+        print(f"⚠️  Supabase load failed ({exc}), generating sample data…")
+        _store["df"] = data_loader.generate_sample_data()
+        # Persist sample data to Supabase
+        try:
+            data_loader.save_to_supabase(_store["df"])
+            print("✅  Sample data saved to Supabase — 8 SKUs, 365 days")
+        except Exception as save_exc:
+            print(f"⚠️  Could not save to Supabase ({save_exc}), using in-memory only")
     yield
     _store["df"] = None
 
@@ -38,13 +53,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ForecastHub API",
     description="Demand forecasting and inventory management backend",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
+# CORS — allow local dev and production Vercel domains
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+# Add production origin from env if set
+prod_origin = os.getenv("FRONTEND_URL")
+if prod_origin:
+    ALLOWED_ORIGINS.append(prod_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -79,12 +104,32 @@ async def upload_file(file: UploadFile = File(...)):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
+    # Persist to Supabase
+    try:
+        rows_saved = data_loader.save_to_supabase(df)
+    except Exception as exc:
+        print(f"⚠️  Supabase save failed: {exc}")
+        rows_saved = len(df)
+
     _store["df"] = df
     skus = df["sku"].unique().tolist()
     date_range = {
         "start": str(df["date"].min().date()),
         "end": str(df["date"].max().date()),
     }
+
+    # Log the upload
+    try:
+        db.record_upload(
+            user_id="default",
+            filename=file.filename or "upload.csv",
+            rows=rows_saved,
+            skus=skus,
+            date_range=date_range,
+        )
+    except Exception:
+        pass
+
     return {
         "message": "File uploaded successfully",
         "rows": len(df),
@@ -114,6 +159,24 @@ async def get_forecast_all(horizon: int = 14):
     return {"forecasts": results}
 
 
+@app.get("/api/history/{sku}", summary="Historical sales data for a single SKU")
+async def get_history(sku: str, days: int = 14):
+    """Return the last N days of actual sales data for a SKU."""
+    df = _require_data()
+    if sku not in df["sku"].values:
+        raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in dataset.")
+
+    sku_df = df[df["sku"] == sku].sort_values("date").tail(days)
+    records = [
+        {
+            "date": row["date"].strftime("%Y-%m-%d"),
+            "quantity_sold": float(row["quantity_sold"]),
+        }
+        for _, row in sku_df.iterrows()
+    ]
+    return {"sku": sku, "days": days, "history": records}
+
+
 @app.get("/api/inventory", summary="Current inventory status with reorder alerts")
 async def get_inventory(lead_time: int = 7, service_level: float = 0.95):
     """
@@ -132,9 +195,9 @@ async def get_inventory(lead_time: int = 7, service_level: float = 0.95):
     }
 
 
-@app.post("/api/ask", summary="Natural language inventory query (Claude)")
+@app.post("/api/ask", summary="Natural language inventory query (Groq)")
 async def ask_question(body: AskRequest):
-    """Send a natural language question to Claude and receive inventory advice."""
+    """Send a natural language question to the AI advisor."""
     df = _require_data()
     inv_status = inventory_logic.compute_inventory_status(df)
 

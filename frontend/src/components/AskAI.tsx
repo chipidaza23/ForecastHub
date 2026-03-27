@@ -27,7 +27,16 @@ export default function AskAI() {
       setAnswer(res.answer);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error";
-      setError(msg.includes("ANTHROPIC_API_KEY") ? "Set ANTHROPIC_API_KEY in backend/.env" : msg);
+      // Provide specific, actionable error messages
+      if (msg.includes("GROQ_API_KEY")) {
+        setError("AI Advisor requires a GROQ_API_KEY. Set it in your backend .env file.");
+      } else if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+        setError("Cannot connect to backend. Make sure the API server is running.");
+      } else if (msg.includes("503")) {
+        setError("AI service unavailable. Check that GROQ_API_KEY is configured on the server.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -39,7 +48,7 @@ export default function AskAI() {
         <Sparkles className="w-4 h-4 text-purple-500" />
         <h2 className="text-base font-semibold text-gray-900">Ask AI Advisor</h2>
         <span className="ml-auto text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-          Claude
+          AI
         </span>
       </div>
 
