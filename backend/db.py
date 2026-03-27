@@ -6,6 +6,8 @@ Tables:
   uploads    (id, user_id, filename, rows, skus, date_range, created_at)
 """
 
+from __future__ import annotations
+
 import os
 from functools import lru_cache
 

@@ -4,21 +4,27 @@ main.py — ForecastHub FastAPI server.
 Run with: uvicorn main:app --reload
 """
 
+from __future__ import annotations
+
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import pandas as pd
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 import ai_advisor
 import data_loader
 import db
 import forecaster
 import inventory_logic
+from auth import verify_token
 
 load_dotenv()
 
@@ -50,12 +56,16 @@ async def lifespan(app: FastAPI):
     _store["df"] = None
 
 
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="ForecastHub API",
     description="Demand forecasting and inventory management backend",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS — allow local dev and production Vercel domains
 ALLOWED_ORIGINS = [
@@ -93,7 +103,8 @@ class AskRequest(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.post("/api/upload", summary="Upload a CSV or Excel sales file")
-async def upload_file(file: UploadFile = File(...)):
+@limiter.limit("5/minute")
+async def upload_file(request: Request, file: UploadFile = File(...), _user=Depends(verify_token)):
     """
     Upload a CSV or Excel file with columns: date, sku, quantity_sold.
     Optional columns: price, category, inventory_on_hand.
@@ -138,8 +149,17 @@ async def upload_file(file: UploadFile = File(...)):
     }
 
 
+@app.get("/api/forecast/all", summary="Forecasts for all SKUs")
+async def get_forecast_all(horizon: int = 14):
+    """Return demand forecasts for every SKU in the dataset."""
+    df = _require_data()
+    results = forecaster.forecast_all(df, horizon=horizon)
+    return {"forecasts": results}
+
+
 @app.get("/api/forecast/{sku}", summary="Forecast for a single SKU")
-async def get_forecast_sku(sku: str, horizon: int = 14):
+@limiter.limit("30/minute")
+async def get_forecast_sku(request: Request, sku: str, horizon: int = 14):
     """Return a demand forecast for the given SKU (default: 14-day horizon)."""
     df = _require_data()
     if sku not in df["sku"].values:
@@ -149,14 +169,6 @@ async def get_forecast_sku(sku: str, horizon: int = 14):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return result
-
-
-@app.get("/api/forecast/all", summary="Forecasts for all SKUs")
-async def get_forecast_all(horizon: int = 14):
-    """Return demand forecasts for every SKU in the dataset."""
-    df = _require_data()
-    results = forecaster.forecast_all(df, horizon=horizon)
-    return {"forecasts": results}
 
 
 @app.get("/api/history/{sku}", summary="Historical sales data for a single SKU")
@@ -196,7 +208,8 @@ async def get_inventory(lead_time: int = 7, service_level: float = 0.95):
 
 
 @app.post("/api/ask", summary="Natural language inventory query (Groq)")
-async def ask_question(body: AskRequest):
+@limiter.limit("10/minute")
+async def ask_question(request: Request, body: AskRequest, _user=Depends(verify_token)):
     """Send a natural language question to the AI advisor."""
     df = _require_data()
     inv_status = inventory_logic.compute_inventory_status(df)
