@@ -40,6 +40,7 @@ export default function AskAI() {
       setMessages((prev) => [...prev, { role: "assistant", content: res.answer }]);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error";
+      // Provide specific, actionable error messages
       if (msg.includes("GROQ_API_KEY")) {
         setError("AI Advisor requires a GROQ_API_KEY. Set it in your backend .env file.");
       } else if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
