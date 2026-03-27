@@ -2,8 +2,6 @@
 data_loader.py — CSV/Excel ingestion, validation, sample data generation, and Supabase persistence.
 """
 
-from __future__ import annotations
-
 import io
 import math
 import random

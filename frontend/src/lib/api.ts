@@ -4,26 +4,11 @@
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-/** Set by AuthProvider when a user session is active. */
-let _authToken: string | null = null;
-
-export function setAuthToken(token: string | null) {
-  _authToken = token;
-}
-
-function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (_authToken) {
-    headers["Authorization"] = `Bearer ${_authToken}`;
-  }
-  return headers;
-}
-
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
-      headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
+      headers: { "Content-Type": "application/json", ...options?.headers },
       ...options,
     });
   } catch {
@@ -115,11 +100,7 @@ export const api = {
     form.append("file", file);
     let res: Response;
     try {
-      res = await fetch(`${BASE}/api/upload`, {
-        method: "POST",
-        body: form,
-        headers: authHeaders(),
-      });
+      res = await fetch(`${BASE}/api/upload`, { method: "POST", body: form });
     } catch {
       throw new Error("Failed to fetch — is the backend running?");
     }
