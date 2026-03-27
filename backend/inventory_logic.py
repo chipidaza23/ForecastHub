@@ -13,6 +13,8 @@ Default parameters:
   order_cost       = 50    (fixed cost per order, USD)
 """
 
+from __future__ import annotations
+
 import math
 from typing import Optional
 

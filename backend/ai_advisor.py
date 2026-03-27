@@ -2,10 +2,21 @@
 ai_advisor.py — Natural language inventory queries powered by Groq.
 """
 
+from __future__ import annotations
+
 import json
 import os
 
 from groq import Groq
+
+# Optional Langfuse observability — gracefully disabled if not configured
+_langfuse = None
+try:
+    from langfuse import Langfuse
+    _langfuse = Langfuse()
+    _langfuse.auth_check()
+except Exception:
+    _langfuse = None
 
 SYSTEM_PROMPT = """You are an expert inventory and supply chain analyst embedded in ForecastHub,
 a demand forecasting dashboard. You have deep knowledge of:
@@ -61,6 +72,20 @@ def ask(
 
 Question: {question}"""
 
+    # Start Langfuse trace if available
+    trace = None
+    generation = None
+    if _langfuse:
+        trace = _langfuse.trace(name="ai-advisor-ask", input=question)
+        generation = trace.generation(
+            name="groq-completion",
+            model="llama-3.3-70b-versatile",
+            input=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+        )
+
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         max_tokens=1024,
@@ -73,6 +98,12 @@ Question: {question}"""
     choice = response.choices[0]
     answer = choice.message.content or ""
     tokens = (response.usage.prompt_tokens + response.usage.completion_tokens) if response.usage else 0
+
+    # End Langfuse trace
+    if generation:
+        generation.end(output=answer, usage={"total_tokens": tokens})
+    if trace:
+        trace.update(output=answer)
 
     return {
         "answer": answer,
