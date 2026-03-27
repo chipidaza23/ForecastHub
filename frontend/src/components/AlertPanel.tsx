@@ -7,12 +7,13 @@ import { api, type InventoryItem } from "@/lib/api";
 export default function AlertPanel() {
   const [alerts, setAlerts] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
       .getInventory()
       .then((r) => setAlerts(r.alerts))
-      .catch(console.error)
+      .catch((e) => setError(e.message?.includes("fetch") ? "Failed to fetch — is the backend running?" : e.message))
       .finally(() => setLoading(false));
   }, []);
 
@@ -21,7 +22,7 @@ export default function AlertPanel() {
       <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
         <AlertTriangle className="w-4 h-4 text-amber-500" />
         <h2 className="text-base font-semibold text-gray-900">Reorder Alerts</h2>
-        {!loading && (
+        {!loading && !error && (
           <span
             className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full ${
               alerts.length > 0
@@ -43,7 +44,11 @@ export default function AlertPanel() {
             </div>
           ))}
 
-        {!loading && alerts.length === 0 && (
+        {!loading && error && (
+          <div className="px-5 py-4 text-sm text-red-500">{error}</div>
+        )}
+
+        {!loading && !error && alerts.length === 0 && (
           <div className="px-5 py-8 text-center text-sm text-gray-400">
             All SKUs are above their reorder points.
           </div>
