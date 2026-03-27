@@ -1,5 +1,5 @@
 """
-data_loader.py — CSV/Excel ingestion, validation, and sample data generation.
+data_loader.py — CSV/Excel ingestion, validation, sample data generation, and Supabase persistence.
 """
 
 import io
@@ -9,6 +9,8 @@ from datetime import date, timedelta
 from typing import Optional
 
 import pandas as pd
+
+import db
 
 
 REQUIRED_COLUMNS = {"date", "sku", "quantity_sold"}
@@ -44,8 +46,18 @@ def validate(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def save_to_supabase(df: pd.DataFrame, user_id: str = "default") -> int:
+    """Persist a DataFrame to Supabase. Returns row count."""
+    return db.save_dataframe(df, user_id=user_id)
+
+
+def load_from_supabase(user_id: str = "default") -> pd.DataFrame | None:
+    """Load persisted data from Supabase. Returns None if no data."""
+    return db.load_dataframe(user_id=user_id)
+
+
 def generate_sample_data(
-    n_skus: int = 3,
+    n_skus: int = 8,
     days: int = 365,
     seed: int = 42,
 ) -> pd.DataFrame:
@@ -57,10 +69,16 @@ def generate_sample_data(
     random.seed(seed)
     rng = random.Random(seed)
 
-    skus = [f"SKU-{1000 + i}" for i in range(n_skus)]
-    categories = ["Electronics", "Apparel", "Home & Garden"]
-    prices = [49.99, 29.99, 19.99]
-    base_demands = [15.0, 30.0, 45.0]
+    skus = [
+        "SKU-A001", "SKU-A002", "SKU-B003", "SKU-B004",
+        "SKU-C005", "SKU-C006", "SKU-D007", "SKU-D008",
+    ][:n_skus]
+    categories = [
+        "Electronics", "Electronics", "Apparel", "Apparel",
+        "Home & Garden", "Home & Garden", "Food & Bev", "Food & Bev",
+    ][:n_skus]
+    prices = [89.99, 64.99, 119.99, 79.99, 59.99, 139.99, 94.99, 84.99][:n_skus]
+    base_demands = [85.0, 62.0, 112.0, 75.0, 55.0, 132.0, 89.0, 79.0][:n_skus]
 
     end_date = date.today()
     start_date = end_date - timedelta(days=days - 1)
@@ -70,7 +88,7 @@ def generate_sample_data(
     for idx, sku in enumerate(skus):
         base = base_demands[idx]
         trend_per_day = rng.uniform(0.005, 0.02) * base / days
-        inventory = rng.randint(200, 500)
+        inventory = rng.randint(200, 5000)
 
         for day_num, d in enumerate(date_range):
             # Trend component
@@ -83,7 +101,7 @@ def generate_sample_data(
             # Annual seasonality (peak around day 330 = late November)
             seasonal_annual = 1.0 + 0.4 * math.sin(2 * math.pi * (day_num - 90) / 365)
 
-            # Random noise (±20 %)
+            # Random noise (±10 %)
             noise = rng.gauss(1.0, 0.10)
 
             qty = max(0, round((base + trend) * seasonal_weekly * seasonal_annual * noise))

@@ -1,11 +1,11 @@
 """
-ai_advisor.py — Natural language inventory queries powered by Claude.
+ai_advisor.py — Natural language inventory queries powered by Groq.
 """
 
 import json
 import os
 
-import anthropic
+from groq import Groq
 
 SYSTEM_PROMPT = """You are an expert inventory and supply chain analyst embedded in ForecastHub,
 a demand forecasting dashboard. You have deep knowledge of:
@@ -33,7 +33,7 @@ def ask(
     forecast_context: list[dict] | None = None,
 ) -> dict:
     """
-    Send a natural language question to Claude with inventory context.
+    Send a natural language question to Groq with inventory context.
 
     Args:
         question: User's free-text question.
@@ -43,11 +43,11 @@ def ask(
     Returns:
         {"answer": str, "model": str, "tokens_used": int}
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise EnvironmentError("ANTHROPIC_API_KEY is not set. Add it to your .env file.")
+        raise EnvironmentError("GROQ_API_KEY is not set. Add it to your .env file.")
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = Groq(api_key=api_key)
 
     context_payload = {
         "inventory_status": inventory_context,
@@ -61,18 +61,21 @@ def ask(
 
 Question: {question}"""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
         max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
     )
 
-    answer = message.content[0].text
-    tokens = message.usage.input_tokens + message.usage.output_tokens
+    choice = response.choices[0]
+    answer = choice.message.content or ""
+    tokens = (response.usage.prompt_tokens + response.usage.completion_tokens) if response.usage else 0
 
     return {
         "answer": answer,
-        "model": message.model,
+        "model": response.model,
         "tokens_used": tokens,
     }
