@@ -1,3 +1,4 @@
+import Link from "next/link";
 import KPICards from "@/components/KPICards";
 import ForecastChart from "@/components/ForecastChart";
 import InventoryTable from "@/components/InventoryTable";
@@ -8,11 +9,19 @@ export default function DashboardPage() {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Real-time demand forecasts and inventory health
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Real-time demand forecasts and inventory health
+          </p>
+        </div>
+        <Link
+          href="/upload"
+          className="text-sm font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl transition-colors"
+        >
+          Upload Data
+        </Link>
       </div>
 
       {/* KPI row */}

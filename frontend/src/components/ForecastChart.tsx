@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -11,16 +11,25 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
-import { api, type SkuForecast } from "@/lib/api";
+import { Download } from "lucide-react";
+import { api, type SkuForecast, type HistoryPoint } from "@/lib/api";
 
 interface Props {
   sku?: string;
 }
 
+const HORIZONS = [
+  { value: 7, label: "7 days" },
+  { value: 14, label: "14 days" },
+  { value: 30, label: "30 days" },
+];
+
 export default function ForecastChart({ sku }: Props) {
   const [forecast, setForecast] = useState<SkuForecast | null>(null);
+  const [history, setHistory] = useState<HistoryPoint[] | null>(null);
   const [allSkus, setAllSkus] = useState<string[]>([]);
   const [selected, setSelected] = useState<string>(sku ?? "");
+  const [horizon, setHorizon] = useState(14);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,25 +42,76 @@ export default function ForecastChart({ sku }: Props) {
     });
   }, []);
 
+  // Fetch forecast when SKU or horizon changes
   useEffect(() => {
     if (!selected) return;
     setLoading(true);
     setError(null);
     api
-      .forecastSku(selected, 14)
+      .forecastSku(selected, horizon)
       .then(setForecast)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+  }, [selected, horizon]);
+
+  // Fetch historical data when SKU changes
+  useEffect(() => {
+    if (!selected) return;
+    api
+      .historySku(selected, 14)
+      .then((res) => setHistory(res.history))
+      .catch(() => setHistory(null));
   }, [selected]);
 
-  const chartData = forecast?.forecast.map((p) => ({
-    date: p.date.slice(5), // MM-DD
-    Forecast: +p.point.toFixed(1),
-    "80% Low": +p.lo_80.toFixed(1),
-    "80% High": +p.hi_80.toFixed(1),
-    "95% Low": +p.lo_95.toFixed(1),
-    "95% High": +p.hi_95.toFixed(1),
-  }));
+  // Merge history + forecast into unified chart data
+  const chartData = useMemo(() => {
+    const points: Record<string, number | string | undefined>[] = [];
+
+    if (history) {
+      for (const h of history) {
+        points.push({ date: h.date.slice(5), Actual: h.quantity_sold });
+      }
+    }
+
+    if (forecast) {
+      for (const f of forecast.forecast) {
+        const dateLabel = f.date.slice(5);
+        const existing = points.find((p) => p.date === dateLabel);
+        const forecastFields = {
+          Forecast: +f.point.toFixed(1),
+          "80% Low": +f.lo_80.toFixed(1),
+          "80% High": +f.hi_80.toFixed(1),
+          "95% Low": +f.lo_95.toFixed(1),
+          "95% High": +f.hi_95.toFixed(1),
+        };
+        if (existing) {
+          Object.assign(existing, forecastFields);
+        } else {
+          points.push({ date: dateLabel, ...forecastFields });
+        }
+      }
+    }
+
+    return points.length > 0 ? points : undefined;
+  }, [history, forecast]);
+
+  const exportCSV = () => {
+    if (!chartData) return;
+    const header = "Date,Actual,Forecast,80% Low,80% High,95% Low,95% High\n";
+    const rows = chartData
+      .map(
+        (p) =>
+          `${p.date},${p.Actual ?? ""},${p.Forecast ?? ""},${p["80% Low"] ?? ""},${p["80% High"] ?? ""},${p["95% Low"] ?? ""},${p["95% High"] ?? ""}`
+      )
+      .join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `forecast-${selected}-${horizon}d.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -65,17 +125,38 @@ export default function ForecastChart({ sku }: Props) {
             </p>
           )}
         </div>
-        <select
-          value={selected}
-          onChange={(e) => setSelected(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          {allSkus.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={horizon}
+            onChange={(e) => setHorizon(Number(e.target.value))}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {HORIZONS.map((h) => (
+              <option key={h.value} value={h.value}>
+                {h.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {allSkus.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={exportCSV}
+            disabled={!chartData}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
+            title="Export CSV"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -106,6 +187,17 @@ export default function ForecastChart({ sku }: Props) {
             <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={36} />
             <Tooltip
               contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+            />
+            <Legend verticalAlign="top" height={28} iconType="line" wrapperStyle={{ fontSize: 11 }} />
+            {/* Historical actuals */}
+            <Area
+              type="monotone"
+              dataKey="Actual"
+              stroke="#10b981"
+              strokeWidth={2}
+              fill="none"
+              dot={{ r: 2, fill: "#10b981" }}
+              connectNulls={false}
             />
             {/* 95% CI band */}
             <Area
