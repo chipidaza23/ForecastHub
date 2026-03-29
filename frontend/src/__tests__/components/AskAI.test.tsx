@@ -28,6 +28,7 @@ describe("AskAI", () => {
 
   beforeEach(() => {
     mockAsk.mockReset();
+    localStorage.clear();
     // jsdom doesn't implement scrollTo
     Element.prototype.scrollTo = jest.fn();
   });
@@ -144,10 +145,7 @@ describe("AskAI", () => {
 
   it("send button is disabled when input is empty", () => {
     render(<AskAI />);
-    const buttons = screen.getAllByRole("button");
-    const sendBtn = buttons.find(
-      (b) => !b.textContent?.includes("SKU") && !b.textContent?.includes("reorder") && !b.textContent?.includes("reduce")
-    );
+    const sendBtn = screen.getByLabelText("Send message");
     expect(sendBtn).toBeDisabled();
   });
 });
