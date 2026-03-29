@@ -58,8 +58,6 @@ def forecast_sku(
     forecast_df = forecast_df.reset_index()
 
     # Average AutoARIMA and SeasonalNaive point forecasts
-    point_col = "AutoARIMA" if "AutoARIMA" in forecast_df.columns else forecast_df.columns[2]
-
     records = []
     for _, row in forecast_df.iterrows():
         arima_pt = row.get("AutoARIMA", 0)

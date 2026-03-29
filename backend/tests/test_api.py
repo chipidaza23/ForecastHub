@@ -3,9 +3,7 @@
 import io
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 # Ensure backend modules are importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -17,8 +15,9 @@ with patch("db.get_admin_client", return_value=_mock_supabase):
         with patch("data_loader.save_to_supabase", return_value={"rows_inserted": 0, "rows_failed": 0}):
             from main import app, _store
 
-from fastapi.testclient import TestClient
-from data_loader import generate_sample_data
+from fastapi.testclient import TestClient  # noqa: E402
+
+from data_loader import generate_sample_data  # noqa: E402
 
 # Pre-load sample data so endpoints that call _require_data() work
 _store["df"] = generate_sample_data(n_skus=3, days=60, seed=42)
@@ -127,7 +126,11 @@ class TestHistoryEndpoint:
 
 class TestUploadEndpoint:
     def test_upload_csv(self):
-        csv = b"date,sku,quantity_sold,price,inventory_on_hand\n2024-01-01,TEST-1,10,25.0,100\n2024-01-02,TEST-1,15,25.0,85"
+        csv = (
+            b"date,sku,quantity_sold,price,inventory_on_hand\n"
+            b"2024-01-01,TEST-1,10,25.0,100\n"
+            b"2024-01-02,TEST-1,15,25.0,85"
+        )
         with patch("db.record_upload"):
             with patch("data_loader.save_to_supabase", return_value={"rows_inserted": 2, "rows_failed": 0}):
                 res = client.post(

@@ -8,12 +8,10 @@ import io
 import math
 import random
 from datetime import date, timedelta
-from typing import Optional
 
 import pandas as pd
 
 import db
-
 
 REQUIRED_COLUMNS = {"date", "sku", "quantity_sold"}
 OPTIONAL_COLUMNS = {"price", "category", "inventory_on_hand"}
