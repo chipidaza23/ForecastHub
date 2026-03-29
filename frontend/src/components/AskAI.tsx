@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
-import { Sparkles, Send, Loader2, Trash2 } from "lucide-react";
+import { Sparkles, Send, Loader2, Trash2, Copy, Check } from "lucide-react";
 import Markdown from "react-markdown";
 import { api } from "@/lib/api";
 
@@ -16,12 +16,50 @@ interface Message {
   content: string;
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-2 right-2 p-1 rounded hover:bg-purple-100 text-purple-400 hover:text-purple-600 transition-colors opacity-0 group-hover:opacity-100"
+      aria-label="Copy message"
+    >
+      {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
+}
+
 export default function AskAI() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Load persisted messages from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("forecasthub-chat");
+      if (stored) {
+        const parsed = JSON.parse(stored) as Message[];
+        if (Array.isArray(parsed)) setMessages(parsed);
+      }
+    } catch {
+      // Ignore corrupted localStorage
+    }
+  }, []);
+
+  // Persist messages to localStorage
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem("forecasthub-chat", JSON.stringify(messages));
+    }
+  }, [messages]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -62,9 +100,10 @@ export default function AskAI() {
         <h2 className="text-base font-semibold text-gray-900">Ask AI Advisor</h2>
         {messages.length > 0 && (
           <button
-            onClick={() => { setMessages([]); setError(null); }}
+            onClick={() => { setMessages([]); setError(null); localStorage.removeItem("forecasthub-chat"); }}
             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
             title="Clear conversation"
+            aria-label="Clear conversation"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -99,28 +138,31 @@ export default function AskAI() {
                 className={
                   msg.role === "user"
                     ? "text-sm text-gray-700 bg-gray-50 border border-gray-100 rounded-xl p-3"
-                    : "text-sm text-gray-700 bg-purple-50 border border-purple-100 rounded-xl p-4 leading-relaxed"
+                    : "relative group text-sm text-gray-700 bg-purple-50 border border-purple-100 rounded-xl p-4 leading-relaxed"
                 }
               >
                 {msg.role === "user" ? (
                   <p className="font-medium">{msg.content}</p>
                 ) : (
-                  <Markdown
-                    components={{
-                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                      ul: ({ children }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
-                      li: ({ children }) => <li className="mb-1">{children}</li>,
-                      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                      code: ({ children }) => (
-                        <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">{children}</code>
-                      ),
-                      h3: ({ children }) => <h3 className="font-semibold mt-2 mb-1">{children}</h3>,
-                      h2: ({ children }) => <h2 className="font-bold mt-3 mb-1">{children}</h2>,
-                    }}
-                  >
-                    {msg.content}
-                  </Markdown>
+                  <>
+                    <Markdown
+                      components={{
+                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1">{children}</li>,
+                        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                        code: ({ children }) => (
+                          <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">{children}</code>
+                        ),
+                        h3: ({ children }) => <h3 className="font-semibold mt-2 mb-1">{children}</h3>,
+                        h2: ({ children }) => <h2 className="font-bold mt-3 mb-1">{children}</h2>,
+                      }}
+                    >
+                      {msg.content}
+                    </Markdown>
+                    <CopyButton text={msg.content} />
+                  </>
                 )}
               </div>
             ))}
@@ -139,11 +181,14 @@ export default function AskAI() {
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !loading && submit()}
             placeholder="Ask anything about your inventory…"
+            maxLength={2000}
+            aria-label="Ask a question about your inventory"
             className="flex-1 text-sm border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-400 placeholder-gray-400"
           />
           <button
             onClick={() => submit()}
             disabled={loading || !question.trim()}
+            aria-label="Send message"
             className="p-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded-xl transition-colors"
           >
             {loading ? (

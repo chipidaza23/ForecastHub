@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import AuthProvider from "@/components/AuthProvider";
+import AuthGuard from "@/components/AuthGuard";
 
 export const metadata: Metadata = {
   title: "ForecastHub — Demand Forecasting Dashboard",
@@ -18,10 +18,9 @@ export default function RootLayout({
     <html lang="en" className="h-full">
       <body className="h-full flex bg-slate-50">
         <AuthProvider>
-          <Sidebar />
-          <main className="flex-1 overflow-auto">
+          <AuthGuard>
             <ErrorBoundary>{children}</ErrorBoundary>
-          </main>
+          </AuthGuard>
         </AuthProvider>
       </body>
     </html>

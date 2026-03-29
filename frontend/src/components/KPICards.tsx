@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Package, AlertTriangle, TrendingUp, DollarSign } from "lucide-react";
+import Link from "next/link";
+import { Package, AlertTriangle, TrendingUp, DollarSign, Upload } from "lucide-react";
 import { api, type KPIs } from "@/lib/api";
 
 interface Card {
@@ -68,6 +69,21 @@ export default function KPICards() {
         },
       ]
     : [];
+
+  if (kpis && kpis.total_skus === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-8 text-center shadow-sm">
+        <Upload className="w-8 h-8 mx-auto text-gray-300 mb-3" />
+        <p className="text-sm text-gray-500 mb-2">No data yet — upload a CSV to get started</p>
+        <Link
+          href="/upload"
+          className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+        >
+          Go to Upload →
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
