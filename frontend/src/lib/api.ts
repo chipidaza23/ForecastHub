@@ -133,17 +133,19 @@ export const api = {
     request<SkuForecast>(`/api/forecast/${encodeURIComponent(sku)}?horizon=${horizon}`, { signal }),
 
   /** Forecasts for all SKUs */
-  forecastAll: (horizon = 14) =>
-    request<{ forecasts: SkuForecast[] }>(`/api/forecast/all?horizon=${horizon}`),
+  forecastAll: (horizon = 14, limit = 50, offset = 0) =>
+    request<{ forecasts: SkuForecast[]; total: number }>(
+      `/api/forecast/all?horizon=${horizon}&limit=${limit}&offset=${offset}`
+    ),
 
   /** Historical sales data for a single SKU */
   historySku: (sku: string, days = 14, signal?: AbortSignal) =>
     request<SkuHistory>(`/api/history/${encodeURIComponent(sku)}?days=${days}`, { signal }),
 
   /** Inventory status + reorder alerts */
-  getInventory: (leadTime = 7, serviceLevel = 0.95) =>
+  getInventory: (leadTime = 7, serviceLevel = 0.95, limit = 50, offset = 0) =>
     request<InventoryResponse>(
-      `/api/inventory?lead_time=${leadTime}&service_level=${serviceLevel}`
+      `/api/inventory?lead_time=${leadTime}&service_level=${serviceLevel}&limit=${limit}&offset=${offset}`
     ),
 
   /** Summary KPIs */

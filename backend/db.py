@@ -8,8 +8,11 @@ Tables:
 
 from __future__ import annotations
 
+import logging
 import os
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 from supabase import create_client, Client
@@ -63,11 +66,11 @@ def load_dataframe(user_id: str = "default") -> pd.DataFrame | None:
     return df
 
 
-def save_dataframe(df: pd.DataFrame, user_id: str = "default") -> int:
+def save_dataframe(df: pd.DataFrame, user_id: str = "default") -> dict:
     """
     Write a pandas DataFrame into the sales_data table.
     Replaces all existing rows for the given user_id.
-    Returns the number of rows inserted.
+    Returns dict with rows_inserted and rows_failed counts.
     """
     client = get_admin_client()
 
@@ -91,13 +94,23 @@ def save_dataframe(df: pd.DataFrame, user_id: str = "default") -> int:
             record["inventory_on_hand"] = float(row["inventory_on_hand"])
         records.append(record)
 
-    # Insert in batches of 500
+    # Insert in batches of 500 with per-batch error handling
     batch_size = 500
+    rows_inserted = 0
+    rows_failed = 0
     for i in range(0, len(records), batch_size):
         batch = records[i : i + batch_size]
-        client.table("sales_data").insert(batch).execute()
+        try:
+            client.table("sales_data").insert(batch).execute()
+            rows_inserted += len(batch)
+        except Exception as exc:
+            rows_failed += len(batch)
+            logger.error(
+                "Batch insert failed (rows %d-%d): %s",
+                i, i + len(batch) - 1, exc,
+            )
 
-    return len(records)
+    return {"rows_inserted": rows_inserted, "rows_failed": rows_failed}
 
 
 def record_upload(

@@ -35,7 +35,7 @@ export default function ForecastChart({ sku }: Props) {
 
   // Load SKU list on mount
   useEffect(() => {
-    api.getInventory().then((inv) => {
+    api.getInventory(7, 0.95, 200, 0).then((inv) => {
       const skus = inv.inventory.map((i) => i.sku);
       setAllSkus(skus);
       if (!selected && skus.length) setSelected(skus[0]);
