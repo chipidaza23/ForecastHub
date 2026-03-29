@@ -54,7 +54,7 @@ async def verify_token(request: Request) -> AuthUser:
 
     token = auth_header.split(" ", 1)[1]
     try:
-        from jose import JWTError, jwt
+        import jwt
 
         payload = jwt.decode(
             token,
@@ -63,5 +63,5 @@ async def verify_token(request: Request) -> AuthUser:
             audience="authenticated",
         )
         return AuthUser(user_id=payload["sub"])
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")

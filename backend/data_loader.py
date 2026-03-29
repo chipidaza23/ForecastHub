@@ -48,8 +48,8 @@ def validate(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def save_to_supabase(df: pd.DataFrame, user_id: str = "default") -> int:
-    """Persist a DataFrame to Supabase. Returns row count."""
+def save_to_supabase(df: pd.DataFrame, user_id: str = "default") -> dict:
+    """Persist a DataFrame to Supabase. Returns dict with rows_inserted and rows_failed."""
     return db.save_dataframe(df, user_id=user_id)
 
 

@@ -66,6 +66,19 @@ describe("api.getInventory", () => {
     const url = mockFetch.mock.calls[0][0] as string;
     expect(url).toContain("lead_time=14");
     expect(url).toContain("service_level=0.99");
+    expect(url).toContain("limit=50");
+    expect(url).toContain("offset=0");
+  });
+
+  it("passes custom pagination params", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ inventory: [], alerts: [], total_skus: 0, skus_below_rop: 0 }),
+    });
+    await api.getInventory(7, 0.95, 25, 50);
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain("limit=25");
+    expect(url).toContain("offset=50");
   });
 });
 

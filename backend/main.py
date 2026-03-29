@@ -6,6 +6,7 @@ Run with: uvicorn main:app --reload
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -29,10 +30,16 @@ from auth import AuthUser, verify_token
 
 load_dotenv()
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 # ── In-memory data store (cache — Supabase is source of truth) ────────────
 _store: dict[str, Optional[pd.DataFrame]] = {"df": None}
+_store_lock = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -48,22 +55,26 @@ async def lifespan(app: FastAPI):
     try:
         df = data_loader.load_from_supabase()
         if df is not None and not df.empty:
-            _store["df"] = df
+            async with _store_lock:
+                _store["df"] = df
             skus = df["sku"].nunique()
-            print(f"✅  Loaded {len(df)} rows ({skus} SKUs) from Supabase")
+            logger.info("Loaded %d rows (%d SKUs) from Supabase", len(df), skus)
         else:
             raise ValueError("No data in Supabase")
     except Exception as exc:
-        print(f"⚠️  Supabase load failed ({exc}), generating sample data…")
-        _store["df"] = data_loader.generate_sample_data()
+        logger.warning("Supabase load failed (%s), generating sample data", exc)
+        sample = data_loader.generate_sample_data()
+        async with _store_lock:
+            _store["df"] = sample
         # Persist sample data to Supabase
         try:
-            data_loader.save_to_supabase(_store["df"])
-            print("✅  Sample data saved to Supabase — 8 SKUs, 365 days")
+            data_loader.save_to_supabase(sample)
+            logger.info("Sample data saved to Supabase — 8 SKUs, 365 days")
         except Exception as save_exc:
-            print(f"⚠️  Could not save to Supabase ({save_exc}), using in-memory only")
+            logger.warning("Could not save to Supabase (%s), using in-memory only", save_exc)
     yield
-    _store["df"] = None
+    async with _store_lock:
+        _store["df"] = None
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -98,10 +109,12 @@ app.add_middleware(
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-def _require_data() -> pd.DataFrame:
-    if _store["df"] is None:
+async def _require_data() -> pd.DataFrame:
+    async with _store_lock:
+        df = _store["df"]
+    if df is None:
         raise HTTPException(status_code=400, detail="No data loaded. Upload a file first.")
-    return _store["df"]
+    return df
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -133,12 +146,16 @@ async def upload_file(request: Request, file: UploadFile = File(...), user: Auth
 
     # Persist to Supabase
     try:
-        rows_saved = data_loader.save_to_supabase(df, user_id=user.user_id)
+        result = data_loader.save_to_supabase(df, user_id=user.user_id)
+        rows_saved = result["rows_inserted"]
+        if result["rows_failed"] > 0:
+            logger.warning("Upload: %d rows failed to insert", result["rows_failed"])
     except Exception as exc:
-        print(f"⚠️  Supabase save failed: {exc}")
+        logger.warning("Supabase save failed during upload: %s", exc)
         rows_saved = len(df)
 
-    _store["df"] = df
+    async with _store_lock:
+        _store["df"] = df
     skus = df["sku"].unique().tolist()
     date_range = {
         "start": str(df["date"].min().date()),
@@ -166,18 +183,24 @@ async def upload_file(request: Request, file: UploadFile = File(...), user: Auth
 
 
 @app.get("/api/forecast/all", summary="Forecasts for all SKUs")
-async def get_forecast_all(horizon: int = Query(default=14, ge=1, le=365)):
+async def get_forecast_all(
+    horizon: int = Query(default=14, ge=1, le=365),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
     """Return demand forecasts for every SKU in the dataset."""
-    df = _require_data()
+    df = await _require_data()
     results = forecaster.forecast_all(df, horizon=horizon)
-    return {"forecasts": results}
+    total = len(results)
+    paginated = results[offset : offset + limit]
+    return {"forecasts": paginated, "total": total}
 
 
 @app.get("/api/forecast/{sku}", summary="Forecast for a single SKU")
 @limiter.limit("30/minute")
 async def get_forecast_sku(request: Request, sku: str, horizon: int = Query(default=14, ge=1, le=365)):
     """Return a demand forecast for the given SKU (default: 14-day horizon)."""
-    df = _require_data()
+    df = await _require_data()
     if sku not in df["sku"].values:
         raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in dataset.")
     try:
@@ -190,7 +213,7 @@ async def get_forecast_sku(request: Request, sku: str, horizon: int = Query(defa
 @app.get("/api/history/{sku}", summary="Historical sales data for a single SKU")
 async def get_history(sku: str, days: int = Query(default=14, ge=1, le=3650)):
     """Return the last N days of actual sales data for a SKU."""
-    df = _require_data()
+    df = await _require_data()
     if sku not in df["sku"].values:
         raise HTTPException(status_code=404, detail=f"SKU '{sku}' not found in dataset.")
 
@@ -206,19 +229,26 @@ async def get_history(sku: str, days: int = Query(default=14, ge=1, le=3650)):
 
 
 @app.get("/api/inventory", summary="Current inventory status with reorder alerts")
-async def get_inventory(lead_time: int = Query(default=7, ge=1, le=365), service_level: float = Query(default=0.95, ge=0.5, le=0.9999)):
+async def get_inventory(
+    lead_time: int = Query(default=7, ge=1, le=365),
+    service_level: float = Query(default=0.95, ge=0.5, le=0.9999),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
     """
     Return per-SKU inventory status including safety stock, reorder point,
     EOQ, current inventory, and whether the SKU is below its reorder point.
     """
-    df = _require_data()
+    df = await _require_data()
     z = _service_level_to_z(service_level)
     status = inventory_logic.compute_inventory_status(df, lead_time=lead_time, z=z)
     alerts = [s for s in status if s["below_reorder_point"]]
+    total = len(status)
+    paginated = status[offset : offset + limit]
     return {
-        "inventory": status,
+        "inventory": paginated,
         "alerts": alerts,
-        "total_skus": len(status),
+        "total_skus": total,
         "skus_below_rop": len(alerts),
     }
 
@@ -227,7 +257,7 @@ async def get_inventory(lead_time: int = Query(default=7, ge=1, le=365), service
 @limiter.limit("10/minute")
 async def ask_question(request: Request, body: AskRequest, user: AuthUser = Depends(verify_token)):
     """Send a natural language question to the AI advisor."""
-    df = _require_data()
+    df = await _require_data()
     inv_status = inventory_logic.compute_inventory_status(df)
 
     # Build a lightweight forecast summary for context
@@ -265,7 +295,7 @@ async def get_kpis():
       - avg_forecast_accuracy (100 - avg_mape)
       - total_inventory_value
     """
-    df = _require_data()
+    df = await _require_data()
     inv_status = inventory_logic.compute_inventory_status(df)
     skus_below_rop = sum(1 for s in inv_status if s["below_reorder_point"])
 
@@ -295,7 +325,9 @@ async def get_kpis():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "data_loaded": _store["df"] is not None}
+    async with _store_lock:
+        loaded = _store["df"] is not None
+    return {"status": "ok", "data_loaded": loaded}
 
 
 # ── Utility ──────────────────────────────────────────────────────────────────

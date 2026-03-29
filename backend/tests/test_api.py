@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 _mock_supabase = MagicMock()
 with patch("db.get_admin_client", return_value=_mock_supabase):
     with patch("data_loader.load_from_supabase", return_value=None):
-        with patch("data_loader.save_to_supabase", return_value=0):
+        with patch("data_loader.save_to_supabase", return_value={"rows_inserted": 0, "rows_failed": 0}):
             from main import app, _store
 
 from fastapi.testclient import TestClient
@@ -61,6 +61,20 @@ class TestInventoryEndpoint:
         res = client.get("/api/inventory?lead_time=14&service_level=0.99")
         assert res.status_code == 200
 
+    def test_inventory_pagination(self):
+        res = client.get("/api/inventory?limit=2&offset=0")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data["inventory"]) == 2
+        assert data["total_skus"] == 3
+
+    def test_inventory_pagination_offset(self):
+        res = client.get("/api/inventory?limit=2&offset=2")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data["inventory"]) == 1
+        assert data["total_skus"] == 3
+
 
 class TestForecastEndpoints:
     def test_forecast_single_sku(self):
@@ -82,8 +96,17 @@ class TestForecastEndpoints:
         assert res.status_code == 200
         data = res.json()
         assert "forecasts" in data
+        assert "total" in data
         assert isinstance(data["forecasts"], list)
         assert len(data["forecasts"]) == 3
+        assert data["total"] == 3
+
+    def test_forecast_all_pagination(self):
+        res = client.get("/api/forecast/all?limit=1&offset=0")
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data["forecasts"]) == 1
+        assert data["total"] == 3
 
 
 class TestHistoryEndpoint:
@@ -106,7 +129,7 @@ class TestUploadEndpoint:
     def test_upload_csv(self):
         csv = b"date,sku,quantity_sold,price,inventory_on_hand\n2024-01-01,TEST-1,10,25.0,100\n2024-01-02,TEST-1,15,25.0,85"
         with patch("db.record_upload"):
-            with patch("data_loader.save_to_supabase", return_value=2):
+            with patch("data_loader.save_to_supabase", return_value={"rows_inserted": 2, "rows_failed": 0}):
                 res = client.post(
                     "/api/upload",
                     files={"file": ("test.csv", io.BytesIO(csv), "text/csv")},

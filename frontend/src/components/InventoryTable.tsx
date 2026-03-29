@@ -15,6 +15,8 @@ const COLUMNS: { label: string; key: SortableKey; align: string }[] = [
   { label: "Avg Demand/d", key: "avg_daily_demand", align: "text-right" },
 ];
 
+const PAGE_SIZE = 50;
+
 export default function InventoryTable() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,18 +24,23 @@ export default function InventoryTable() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortableKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
 
-  const load = () => {
+  const load = (pageNum: number = page) => {
     setLoading(true);
     setError(null);
     api
-      .getInventory()
-      .then((r) => setItems(r.inventory))
+      .getInventory(7, 0.95, PAGE_SIZE, pageNum * PAGE_SIZE)
+      .then((r) => {
+        setItems(r.inventory);
+        setTotal(r.total_skus);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(page); }, [page]);
 
   const toggleSort = (key: SortableKey) => {
     if (sortKey === key) {
@@ -77,6 +84,10 @@ export default function InventoryTable() {
     URL.revokeObjectURL(url);
   };
 
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const rangeStart = total > 0 ? page * PAGE_SIZE + 1 : 0;
+  const rangeEnd = Math.min((page + 1) * PAGE_SIZE, total);
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -100,7 +111,7 @@ export default function InventoryTable() {
             <Download className="w-4 h-4" />
           </button>
           <button
-            onClick={load}
+            onClick={() => load(page)}
             className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
             title="Refresh"
           >
@@ -170,7 +181,7 @@ export default function InventoryTable() {
                             : "text-gray-700"
                         }`}
                       >
-                        {item.days_of_stock !== null ? `${item.days_of_stock}d` : "—"}
+                        {item.days_of_stock !== null ? `${item.days_of_stock}d` : "\u2014"}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-600">
                         {item.avg_daily_demand}
@@ -193,6 +204,30 @@ export default function InventoryTable() {
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 text-sm text-gray-500">
+          <span>
+            Showing {rangeStart}–{rangeEnd} of {total} SKUs
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page + 1 >= totalPages}
+              className="px-3 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
