@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const withBundleAnalyzer = require("@next/bundle-analyzer")({
+  enabled: process.env.ANALYZE === "true",
+});
+
 const nextConfig: NextConfig = {
   // Allow the app to call the local FastAPI backend during development
   async rewrites() {
@@ -30,4 +35,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

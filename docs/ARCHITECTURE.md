@@ -2,7 +2,7 @@
 
 ## Overview
 
-ForecastHub is a two-tier web application: a **Next.js 14** dashboard talks to a **FastAPI** backend over a REST API. The backend orchestrates three independent engines — a StatsForecast forecasting engine, a Claude AI advisor, and an inventory logic module.
+ForecastHub is a two-tier web application: a **Next.js 16** dashboard talks to a **FastAPI** backend over a REST API. The backend orchestrates three independent engines — a StatsForecast forecasting engine, a Groq AI advisor (Llama 3.3 70B), and an inventory logic module. Data is persisted in **Supabase (Postgres)** with an in-memory cache for fast reads.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -33,8 +33,8 @@ ForecastHub is a two-tier web application: a **Next.js 14** dashboard talks to a
 │  │caster│ │advisor │ │_logic    │                      │
 │  │.py   │ │.py     │ │.py       │                      │
 │  └──────┘ └────────┘ └──────────┘                      │
-│  Stats-    Anthropic   Pure math                       │
-│  Forecast  Claude API  (SS/ROP/EOQ)                    │
+│  Stats-    Groq API    Pure math                       │
+│  Forecast  Llama 3.3   (SS/ROP/EOQ)                    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -50,14 +50,16 @@ ForecastHub is a two-tier web application: a **Next.js 14** dashboard talks to a
 | `data_loader.py` | CSV/Excel parsing, column validation, type coercion, sample data generation |
 | `forecaster.py` | StatsForecast wrapper — model fitting, ensemble logic, prediction intervals, MAPE |
 | `inventory_logic.py` | Safety stock, reorder point, EOQ calculations, alert flagging |
-| `ai_advisor.py` | Claude API integration — prompt construction, context injection, response parsing |
+| `ai_advisor.py` | Groq API integration (Llama 3.3 70B) — prompt construction, context injection, response parsing |
+| `auth.py` | JWT verification via Supabase, `AuthUser` extraction for protected endpoints |
+| `db.py` | Supabase client, batch inserts with retry, upload recording |
 
 ### Data Flow
 
 ```
 1. Startup
-   └─ data_loader.generate_sample_data()
-      └─ 3 SKUs × 365 days → _store["df"] (in-memory pandas DataFrame)
+   └─ data_loader.load_from_supabase() (fallback: generate_sample_data())
+      └─ 8 SKUs × 365 days → Supabase (Postgres) + _store["df"] (in-memory cache)
 
 2. File upload (POST /api/upload)
    └─ data_loader.load_file(file)
@@ -74,7 +76,7 @@ ForecastHub is a two-tier web application: a **Next.js 14** dashboard talks to a
 5. AI query (POST /api/ask)
    └─ Build context from inventory + forecast summaries
       └─ ai_advisor.ask(question, context)
-         └─ Claude API → markdown answer
+         └─ Groq API (Llama 3.3 70B) → markdown answer
 ```
 
 ### Forecasting
@@ -110,13 +112,17 @@ A SKU is flagged `below_reorder_point: true` when `inventory_on_hand < ROP`. Day
 
 ### Storage
 
-Data is stored in a single in-memory pandas DataFrame (`_store["df"]`). This eliminates the need to provision a database for local use and keeps the setup to two commands. The tradeoff is that data does not persist across server restarts. The clear next step for production use is a time-series-optimized backend — TimescaleDB (Postgres extension) or DuckDB are both natural fits.
+**Supabase (Postgres)** is the persistent data store. Sales data and upload metadata are stored in Postgres tables with row-level security (RLS) policies scoped by `user_id`. On startup, the backend loads data from Supabase into an in-memory pandas DataFrame (`_store["df"]`) that serves as a fast read cache. File uploads write through to both Supabase and the in-memory cache.
+
+### Authentication
+
+Protected endpoints (`POST /api/upload`, `POST /api/ask`) require a valid JWT issued by Supabase Auth. The `auth.py` module verifies the token using `SUPABASE_JWT_SECRET` and extracts an `AuthUser` object with `user_id` (from the JWT `sub` claim). When auth is disabled (no JWT secret configured), a default user is used. In production, missing JWT secret triggers a startup warning and all authenticated requests are rejected.
 
 ---
 
 ## Frontend
 
-Built with **Next.js 14 App Router**, **TypeScript**, **Tailwind CSS v4**, and **Recharts**.
+Built with **Next.js 16 App Router**, **TypeScript**, **Tailwind CSS v4**, and **Recharts**.
 
 ### Component Map
 
@@ -127,7 +133,7 @@ page.tsx (main dashboard layout)
 ├── ForecastChart     — 14-day demand chart with confidence bands
 ├── InventoryTable    — per-SKU inventory details
 ├── AlertPanel        — SKUs below reorder point
-└── AskAI             — Claude natural-language interface
+└── AskAI             — Groq/Llama natural-language interface
 ```
 
 ### Component Details
@@ -138,7 +144,7 @@ page.tsx (main dashboard layout)
 | `ForecastChart` | `GET /api/forecast/{sku}` | Recharts AreaChart — point forecast + 80%/95% bands |
 | `InventoryTable` | `GET /api/inventory` | Tabular view; highlights rows where `below_reorder_point: true` |
 | `AlertPanel` | `GET /api/inventory` | Filtered list of alert SKUs |
-| `AskAI` | `POST /api/ask` | Text input → backend → Claude response (markdown rendered) |
+| `AskAI` | `POST /api/ask` | Text input → backend → Groq/Llama response (markdown rendered) |
 
 ### API Client
 
@@ -170,9 +176,9 @@ Full OpenAPI schema auto-generated at `http://localhost:8000/docs`.
 
 **Next.js, not Streamlit or Dash.** Streamlit and Dash are excellent for internal data tools and prototypes. A Next.js frontend enables genuine product-quality UI, native TypeScript, component reuse, and one-click deployment to Vercel — the right foundation for a tool meant to be used by non-technical operators.
 
-**In-memory storage, not a database.** The goal for initial setup is `git clone` → two commands → working dashboard. Introducing a database (even SQLite) adds a provisioning step that many users won't complete. In-memory storage is an explicit, documented constraint — not an oversight — and the upgrade path to TimescaleDB or DuckDB is straightforward.
+**Supabase (Postgres) with in-memory cache.** Supabase provides persistent storage, authentication (JWT), and row-level security out of the box. An in-memory pandas DataFrame cache keeps read latency low for forecasting and inventory endpoints. This combination delivers both persistence and performance without requiring a separate caching layer.
 
-**Claude for natural-language queries, not fine-tuning.** Inventory reasoning requires live, up-to-date context (current stock levels, recent demand summaries). Claude's large context window and instruction-following make it ideal for prompt-based context injection without any model training. The alternative — fine-tuning a smaller model on historical inventory Q&A — would produce a system that is less capable and harder to update.
+**Groq (Llama 3.3 70B) for natural-language queries, not fine-tuning.** Inventory reasoning requires live, up-to-date context (current stock levels, recent demand summaries). Groq's fast inference with Llama 3.3 70B provides strong instruction-following for prompt-based context injection without any model training. The alternative — fine-tuning a smaller model on historical inventory Q&A — would produce a system that is less capable and harder to update.
 
 **Ensemble forecasting.** Neither AutoARIMA nor SeasonalNaive is universally superior across SKU behaviors. AutoARIMA handles complex trend and autocorrelation but can over-fit short series. SeasonalNaive is extremely robust for strongly periodic data. Their average consistently outperforms either individually on retail time series with diverse SKU profiles.
 
@@ -183,7 +189,7 @@ Full OpenAPI schema auto-generated at `http://localhost:8000/docs`.
 | Tier | Recommended Option | Notes |
 |------|-------------------|-------|
 | Frontend | [Vercel](https://vercel.com) | Auto-deploy from `frontend/` directory; set `NEXT_PUBLIC_API_URL` to backend URL |
-| Backend | [Railway](https://railway.app) or [Render](https://render.com) | Python service; set `ANTHROPIC_API_KEY` env var for AI advisor |
+| Backend | [Railway](https://railway.app) or [Render](https://render.com) | Python service; set `GROQ_API_KEY` env var for AI advisor |
 | Backend (self-hosted) | Docker on any VPS | `docker build` from `backend/` |
 
 ---
@@ -192,7 +198,8 @@ Full OpenAPI schema auto-generated at `http://localhost:8000/docs`.
 
 The natural evolution of this architecture:
 
-1. **TimescaleDB** — replace in-memory DataFrame with a time-series Postgres instance. Enables persistence, multi-user access, and historical query patterns.
-2. **Background task queue** (Celery + Redis) — move forecast computation off the request path. Pre-compute forecasts on a schedule and serve from cache.
-3. **Multi-tenant data model** — add a `store_id` / `warehouse_id` dimension to support multi-location operations.
+1. ~~**Persistent database**~~ — **Done.** Supabase (Postgres) is the persistent store with RLS policies and in-memory cache.
+2. ~~**Multi-tenant data model**~~ — **Partially done.** `user_id` column exists on uploads and sales data via JWT `sub` claim. Full multi-location support (`store_id` / `warehouse_id`) is the next step.
+3. **Background task queue** (Celery + Redis) — move forecast computation off the request path. Pre-compute forecasts on a schedule and serve from cache.
 4. **Notification service** — trigger email or Slack alerts when SKUs cross the reorder threshold, rather than requiring a user to check the dashboard.
+5. **TimescaleDB migration** — for time-series-optimized queries and hypertable partitioning as data volume grows beyond what standard Postgres handles efficiently.

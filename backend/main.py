@@ -190,7 +190,7 @@ async def get_forecast_all(
 ):
     """Return demand forecasts for every SKU in the dataset."""
     df = await _require_data()
-    results = forecaster.forecast_all(df, horizon=horizon)
+    results = await asyncio.to_thread(forecaster.forecast_all, df, horizon)
     total = len(results)
     paginated = results[offset : offset + limit]
     return {"forecasts": paginated, "total": total}
