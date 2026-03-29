@@ -6,13 +6,14 @@ Run with: uvicorn main:app --reload
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import pandas as pd
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -24,9 +25,11 @@ import data_loader
 import db
 import forecaster
 import inventory_logic
-from auth import verify_token
+from auth import AuthUser, verify_token
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # ── In-memory data store (cache — Supabase is source of truth) ────────────
 _store: dict[str, Optional[pd.DataFrame]] = {"df": None}
@@ -34,6 +37,13 @@ _store: dict[str, Optional[pd.DataFrame]] = {"df": None}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Warn if running in production without auth
+    if os.getenv("ENVIRONMENT") == "production" and not os.getenv("SUPABASE_JWT_SECRET"):
+        logger.warning(
+            "Running in production without SUPABASE_JWT_SECRET. "
+            "Authenticated endpoints will reject all requests."
+        )
+
     # Try to load from Supabase first; fall back to sample data
     try:
         df = data_loader.load_from_supabase()
@@ -104,12 +114,18 @@ class AskRequest(BaseModel):
 
 @app.post("/api/upload", summary="Upload a CSV or Excel sales file")
 @limiter.limit("5/minute")
-async def upload_file(request: Request, file: UploadFile = File(...), _user=Depends(verify_token)):
+async def upload_file(request: Request, file: UploadFile = File(...), user: AuthUser = Depends(verify_token)):
     """
     Upload a CSV or Excel file with columns: date, sku, quantity_sold.
     Optional columns: price, category, inventory_on_hand.
     """
     contents = await file.read()
+    MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+    if len(contents) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({len(contents) / 1024 / 1024:.1f} MB). Maximum allowed: 10 MB.",
+        )
     try:
         df = data_loader.load_file(contents, file.filename or "upload.csv")
     except ValueError as exc:
@@ -117,7 +133,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), _user=Depe
 
     # Persist to Supabase
     try:
-        rows_saved = data_loader.save_to_supabase(df)
+        rows_saved = data_loader.save_to_supabase(df, user_id=user.user_id)
     except Exception as exc:
         print(f"⚠️  Supabase save failed: {exc}")
         rows_saved = len(df)
@@ -132,7 +148,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), _user=Depe
     # Log the upload
     try:
         db.record_upload(
-            user_id="default",
+            user_id=user.user_id,
             filename=file.filename or "upload.csv",
             rows=rows_saved,
             skus=skus,
@@ -150,7 +166,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), _user=Depe
 
 
 @app.get("/api/forecast/all", summary="Forecasts for all SKUs")
-async def get_forecast_all(horizon: int = 14):
+async def get_forecast_all(horizon: int = Query(default=14, ge=1, le=365)):
     """Return demand forecasts for every SKU in the dataset."""
     df = _require_data()
     results = forecaster.forecast_all(df, horizon=horizon)
@@ -159,7 +175,7 @@ async def get_forecast_all(horizon: int = 14):
 
 @app.get("/api/forecast/{sku}", summary="Forecast for a single SKU")
 @limiter.limit("30/minute")
-async def get_forecast_sku(request: Request, sku: str, horizon: int = 14):
+async def get_forecast_sku(request: Request, sku: str, horizon: int = Query(default=14, ge=1, le=365)):
     """Return a demand forecast for the given SKU (default: 14-day horizon)."""
     df = _require_data()
     if sku not in df["sku"].values:
@@ -172,7 +188,7 @@ async def get_forecast_sku(request: Request, sku: str, horizon: int = 14):
 
 
 @app.get("/api/history/{sku}", summary="Historical sales data for a single SKU")
-async def get_history(sku: str, days: int = 14):
+async def get_history(sku: str, days: int = Query(default=14, ge=1, le=3650)):
     """Return the last N days of actual sales data for a SKU."""
     df = _require_data()
     if sku not in df["sku"].values:
@@ -190,7 +206,7 @@ async def get_history(sku: str, days: int = 14):
 
 
 @app.get("/api/inventory", summary="Current inventory status with reorder alerts")
-async def get_inventory(lead_time: int = 7, service_level: float = 0.95):
+async def get_inventory(lead_time: int = Query(default=7, ge=1, le=365), service_level: float = Query(default=0.95, ge=0.5, le=0.9999)):
     """
     Return per-SKU inventory status including safety stock, reorder point,
     EOQ, current inventory, and whether the SKU is below its reorder point.
@@ -209,7 +225,7 @@ async def get_inventory(lead_time: int = 7, service_level: float = 0.95):
 
 @app.post("/api/ask", summary="Natural language inventory query (Groq)")
 @limiter.limit("10/minute")
-async def ask_question(request: Request, body: AskRequest, _user=Depends(verify_token)):
+async def ask_question(request: Request, body: AskRequest, user: AuthUser = Depends(verify_token)):
     """Send a natural language question to the AI advisor."""
     df = _require_data()
     inv_status = inventory_logic.compute_inventory_status(df)

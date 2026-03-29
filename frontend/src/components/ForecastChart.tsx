@@ -42,26 +42,37 @@ export default function ForecastChart({ sku }: Props) {
     });
   }, []);
 
-  // Fetch forecast when SKU or horizon changes
+  // Fetch forecast + history together, cancel stale requests
   useEffect(() => {
     if (!selected) return;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    api
-      .forecastSku(selected, horizon)
-      .then(setForecast)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [selected, horizon]);
 
-  // Fetch historical data when SKU changes
-  useEffect(() => {
-    if (!selected) return;
-    api
-      .historySku(selected, 14)
-      .then((res) => setHistory(res.history))
-      .catch(() => setHistory(null));
-  }, [selected]);
+    Promise.all([
+      api.forecastSku(selected, horizon, controller.signal),
+      api.historySku(selected, 14, controller.signal),
+    ])
+      .then(([fc, hist]) => {
+        if (!controller.signal.aborted) {
+          setForecast(fc);
+          setHistory(hist.history);
+        }
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) {
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          setError(e.message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [selected, horizon]);
 
   // Merge history + forecast into unified chart data
   const chartData = useMemo(() => {

@@ -26,7 +26,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
       ...options,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
     throw new Error("Failed to fetch — is the backend running?");
   }
   if (!res.ok) {
@@ -128,16 +129,16 @@ export const api = {
   },
 
   /** Forecast for a single SKU */
-  forecastSku: (sku: string, horizon = 14) =>
-    request<SkuForecast>(`/api/forecast/${encodeURIComponent(sku)}?horizon=${horizon}`),
+  forecastSku: (sku: string, horizon = 14, signal?: AbortSignal) =>
+    request<SkuForecast>(`/api/forecast/${encodeURIComponent(sku)}?horizon=${horizon}`, { signal }),
 
   /** Forecasts for all SKUs */
   forecastAll: (horizon = 14) =>
     request<{ forecasts: SkuForecast[] }>(`/api/forecast/all?horizon=${horizon}`),
 
   /** Historical sales data for a single SKU */
-  historySku: (sku: string, days = 14) =>
-    request<SkuHistory>(`/api/history/${encodeURIComponent(sku)}?days=${days}`),
+  historySku: (sku: string, days = 14, signal?: AbortSignal) =>
+    request<SkuHistory>(`/api/history/${encodeURIComponent(sku)}?days=${days}`, { signal }),
 
   /** Inventory status + reorder alerts */
   getInventory: (leadTime = 7, serviceLevel = 0.95) =>

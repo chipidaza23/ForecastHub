@@ -14,6 +14,19 @@ export default function UploadPage() {
     setUploading(true);
     setError(null);
     setResult(null);
+    // Client-side validation
+    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+    if (file.size > MAX_SIZE) {
+      setError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed: 10 MB.`);
+      setUploading(false);
+      return;
+    }
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!ext || !["csv", "xlsx", "xls"].includes(ext)) {
+      setError("Unsupported file type. Please upload a CSV or Excel file (.csv, .xlsx, .xls).");
+      setUploading(false);
+      return;
+    }
     try {
       const res = await api.uploadFile(file);
       setResult(res);

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Mock Supabase before importing main (so lifespan doesn't try to connect)
 _mock_supabase = MagicMock()
-with patch("db.get_client", return_value=_mock_supabase):
+with patch("db.get_admin_client", return_value=_mock_supabase):
     with patch("data_loader.load_from_supabase", return_value=None):
         with patch("data_loader.save_to_supabase", return_value=0):
             from main import app, _store
