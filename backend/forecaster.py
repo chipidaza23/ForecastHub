@@ -5,6 +5,8 @@ Models: AutoARIMA + SeasonalNaive (ensemble-ready).
 Returns point forecasts with 80 % and 95 % prediction intervals.
 """
 
+import os
+from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 
 import pandas as pd
@@ -27,6 +29,7 @@ def forecast_sku(
     sku: str,
     horizon: int = 14,
     freq: str = "D",
+    n_jobs: int = -1,
 ) -> dict:
     """
     Forecast demand for a single SKU.
@@ -51,7 +54,7 @@ def forecast_sku(
         SeasonalNaive(season_length=7),
     ]
 
-    sf = StatsForecast(models=models, freq=freq, n_jobs=-1)
+    sf = StatsForecast(models=models, freq=freq, n_jobs=n_jobs)
     sf.fit(nixtla_df)
 
     forecast_df = sf.predict(h=horizon, level=[80, 95])
@@ -90,14 +93,29 @@ def forecast_sku(
     }
 
 
+def _forecast_sku_safe(df: pd.DataFrame, sku: str, horizon: int) -> dict:
+    """Wrapper for forecast_sku that catches exceptions. Must be module-level for pickling."""
+    try:
+        return forecast_sku(df, sku, horizon=horizon, n_jobs=1)
+    except Exception as exc:
+        return {"sku": sku, "error": str(exc)}
+
+
 def forecast_all(df: pd.DataFrame, horizon: int = 14) -> list[dict]:
-    """Forecast all SKUs in the dataset."""
-    results = []
-    for sku in df["sku"].unique():
-        try:
-            results.append(forecast_sku(df, sku, horizon=horizon))
-        except Exception as exc:
-            results.append({"sku": sku, "error": str(exc)})
+    """Forecast all SKUs in the dataset, parallelized across CPU cores."""
+    skus = list(df["sku"].unique())
+    if not skus:
+        return []
+
+    max_workers = min(os.cpu_count() or 4, len(skus))
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_forecast_sku_safe, df, sku, horizon)
+            for sku in skus
+        ]
+        results = [f.result() for f in futures]
+
     return results
 
 

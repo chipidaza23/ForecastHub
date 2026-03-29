@@ -13,11 +13,10 @@ _mock_supabase = MagicMock()
 with patch("db.get_admin_client", return_value=_mock_supabase):
     with patch("data_loader.load_from_supabase", return_value=None):
         with patch("data_loader.save_to_supabase", return_value={"rows_inserted": 0, "rows_failed": 0}):
-            from main import app, _store
+            from fastapi.testclient import TestClient  # noqa: E402
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-from data_loader import generate_sample_data  # noqa: E402
+            from data_loader import generate_sample_data  # noqa: E402
+            from main import _store, app  # noqa: E402
 
 # Pre-load sample data so endpoints that call _require_data() work
 _store["df"] = generate_sample_data(n_skus=3, days=60, seed=42)
