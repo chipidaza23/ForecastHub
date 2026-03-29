@@ -1,5 +1,5 @@
 """
-db.py — Supabase client singleton and query helpers.
+db.py — Supabase client helpers: admin (service-key) and user (anon + JWT).
 
 Tables:
   sales_data (id, user_id, date, sku, quantity_sold, price, category, inventory_on_hand, created_at)
@@ -16,8 +16,8 @@ from supabase import create_client, Client
 
 
 @lru_cache(maxsize=1)
-def get_client() -> Client:
-    """Return a cached Supabase client instance."""
+def get_admin_client() -> Client:
+    """Return a cached Supabase client using the SERVICE_KEY (bypasses RLS)."""
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SERVICE_KEY")
     if not url or not key:
@@ -27,9 +27,25 @@ def get_client() -> Client:
     return create_client(url, key)
 
 
+def get_user_client(jwt_token: str) -> Client:
+    """Return a Supabase client that applies Row Level Security for the given user.
+
+    Uses the anon key and injects the user's JWT so RLS policies apply.
+    Falls back to admin client if SUPABASE_ANON_KEY is not configured yet.
+    """
+    url = os.getenv("SUPABASE_URL")
+    anon_key = os.getenv("SUPABASE_ANON_KEY")
+    if not url or not anon_key:
+        return get_admin_client()
+    client = create_client(url, anon_key)
+    # Set the user's JWT so Supabase applies RLS policies
+    client.postgrest.auth(jwt_token)
+    return client
+
+
 def load_dataframe(user_id: str = "default") -> pd.DataFrame | None:
     """Load all sales_data rows for a user into a pandas DataFrame."""
-    client = get_client()
+    client = get_admin_client()
     response = (
         client.table("sales_data")
         .select("*")
@@ -53,7 +69,7 @@ def save_dataframe(df: pd.DataFrame, user_id: str = "default") -> int:
     Replaces all existing rows for the given user_id.
     Returns the number of rows inserted.
     """
-    client = get_client()
+    client = get_admin_client()
 
     # Delete existing data for this user
     client.table("sales_data").delete().eq("user_id", user_id).execute()
@@ -92,7 +108,7 @@ def record_upload(
     date_range: dict[str, str],
 ) -> None:
     """Log an upload event."""
-    client = get_client()
+    client = get_admin_client()
     client.table("uploads").insert(
         {
             "user_id": user_id,
