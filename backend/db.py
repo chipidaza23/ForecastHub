@@ -12,10 +12,10 @@ import logging
 import os
 from functools import lru_cache
 
-logger = logging.getLogger(__name__)
-
 import pandas as pd
 from supabase import Client, create_client
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
