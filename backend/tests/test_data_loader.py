@@ -1,6 +1,5 @@
 """Tests for data_loader.py — file parsing, validation, and sample data generation."""
 
-import io
 
 import pandas as pd
 import pytest

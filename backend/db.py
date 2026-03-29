@@ -15,7 +15,7 @@ from functools import lru_cache
 logger = logging.getLogger(__name__)
 
 import pandas as pd
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 
 @lru_cache(maxsize=1)
