@@ -99,6 +99,7 @@ export default function InventoryTable() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter SKUs…"
+              aria-label="Search SKUs"
               className="text-sm border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 w-44 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
             />
           </div>
@@ -107,6 +108,7 @@ export default function InventoryTable() {
             disabled={items.length === 0}
             className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
             title="Export CSV"
+            aria-label="Export inventory as CSV"
           >
             <Download className="w-4 h-4" />
           </button>
@@ -114,6 +116,7 @@ export default function InventoryTable() {
             onClick={() => load(page)}
             className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
             title="Refresh"
+            aria-label="Refresh inventory data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
@@ -133,6 +136,7 @@ export default function InventoryTable() {
                 <th
                   key={col.key}
                   onClick={() => toggleSort(col.key)}
+                  aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                   className={`px-4 py-3 ${col.align} font-medium cursor-pointer select-none hover:text-gray-600 transition-colors`}
                 >
                   <span className="inline-flex items-center gap-1">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart2, Package, Bell, Sparkles, Upload, Menu, X } from "lucide-react";
 import { useState } from "react";
+import packageJson from "../../package.json";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: BarChart2 },
@@ -46,7 +47,7 @@ export default function Sidebar() {
     <>
       {/* Mobile top bar */}
       <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
-        <button onClick={() => setOpen(true)} className="p-1 rounded-lg hover:bg-gray-100">
+        <button onClick={() => setOpen(true)} className="p-1 rounded-lg hover:bg-gray-100" aria-label="Open navigation menu">
           <Menu className="w-5 h-5 text-gray-600" />
         </button>
         <Logo />
@@ -59,7 +60,7 @@ export default function Sidebar() {
           <div className="relative w-64 bg-white flex flex-col h-full shadow-xl">
             <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
               <Logo />
-              <button onClick={() => setOpen(false)} className="p-1 rounded-lg hover:bg-gray-100">
+              <button onClick={() => setOpen(false)} className="p-1 rounded-lg hover:bg-gray-100" aria-label="Close navigation menu">
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             </div>
@@ -95,7 +96,7 @@ function Logo() {
 function Footer() {
   return (
     <div className="px-4 py-4 border-t border-gray-100 mt-auto">
-      <p className="text-xs text-gray-400">ForecastHub v0.1.0</p>
+      <p className="text-xs text-gray-400">ForecastHub v{packageJson.version}</p>
       <p className="text-xs text-gray-400">Open-source · MIT</p>
     </div>
   );

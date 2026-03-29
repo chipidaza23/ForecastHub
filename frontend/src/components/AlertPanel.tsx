@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, ShoppingCart, Clock } from "lucide-react";
 import { api, type InventoryItem } from "@/lib/api";
 
@@ -12,7 +13,15 @@ export default function AlertPanel() {
   useEffect(() => {
     api
       .getInventory()
-      .then((r) => setAlerts(r.alerts))
+      .then((r) => {
+        const sorted = [...r.alerts].sort((a, b) => {
+          if (a.days_of_stock === null && b.days_of_stock === null) return 0;
+          if (a.days_of_stock === null) return 1;
+          if (b.days_of_stock === null) return -1;
+          return a.days_of_stock - b.days_of_stock;
+        });
+        setAlerts(sorted);
+      })
       .catch((e) => setError(e.message?.includes("fetch") ? "Failed to fetch — is the backend running?" : e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -86,9 +95,27 @@ export default function AlertPanel() {
                   </span>
                 )}
               </div>
+
+              <Link
+                href="/inventory"
+                className="mt-2 inline-flex items-center text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+              >
+                View in Inventory →
+              </Link>
             </div>
           ))}
       </div>
+
+      {!loading && !error && alerts.length > 0 && (
+        <div className="px-5 py-3 border-t border-gray-100">
+          <Link
+            href="/alerts"
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+          >
+            See all alerts →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -20,13 +20,22 @@ function authHeaders(): Record<string, string> {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const timeoutSignal = AbortSignal.timeout(30_000);
+  const signal = options?.signal
+    ? AbortSignal.any([timeoutSignal, options.signal])
+    : timeoutSignal;
+
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
-      headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
       ...options,
+      headers: { "Content-Type": "application/json", ...authHeaders(), ...options?.headers },
+      signal,
     });
   } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error("Request timed out — the server took too long to respond.");
+    }
     if (err instanceof DOMException && err.name === "AbortError") throw err;
     throw new Error("Failed to fetch — is the backend running?");
   }

@@ -164,6 +164,7 @@ export default function ForecastChart({ sku }: Props) {
             disabled={!chartData}
             className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
             title="Export CSV"
+            aria-label="Export forecast as CSV"
           >
             <Download className="w-4 h-4" />
           </button>
@@ -177,6 +178,12 @@ export default function ForecastChart({ sku }: Props) {
       {loading && (
         <div className="h-64 flex items-center justify-center text-gray-400 text-sm">
           Loading forecast…
+        </div>
+      )}
+
+      {!loading && !error && !chartData && (
+        <div className="h-64 flex items-center justify-center text-sm text-gray-400">
+          No forecast data available
         </div>
       )}
 
